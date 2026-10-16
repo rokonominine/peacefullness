@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lofi Haven: Open World RPG</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=VT323&family=Fredoka:wght@400;600&display=swap');
+
+        body {
+            font-family: 'Fredoka', sans-serif;
+            background-color: #1a1625;
+            color: #f3e8ee;
+            user-select: none;
+            overflow: hidden;
+        }
+
+        .pixel-font {
+            font-family: 'VT323', monospace;
+        }
+
+        canvas {
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        /* Custom Scrollbar for dialogue/inventory */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #2a2438;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #5c4b75;
+            border-radius: 4px;
+        }
+
+        /* Subtle glow effects */
+        .lofi-card {
+            background: rgba(35, 29, 48, 0.85);
+            backdrop-filter: blur(8px);
+            border: 2px solid #4a3e63;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        /* Touch control styling */
+        .dpad-btn {
+            background: rgba(74, 62, 99, 0.6);
+            border: 2px solid #8e78b0;
+            touch-action: manipulation;
+        }
+        .dpad-btn:active {
+            background: #8e78b0;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col justify-between items-center relative overflow-hidden bg-slate-950 text-slate-100">
+
+    <!-- Top Navigation / Control Bar -->
+    <header class="w-full z-20 px-4 py-2 flex justify-between items-center lofi-card rounded-b-xl max-w-6xl mx-auto border-t-0 mt-0">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-full bg-amber-500/20 border-2 border-amber-400 flex items-center justify-center text-amber-300 font-bold text-xl pixel-font">
+                ☕
+            </div>
+            <div>
+                <h1 class="text-xl font-bold tracking-wide text-amber-200 pixel-font text-2xl leading-none">LO-FI HAVEN</h1>
+                <p class="text-xs text-purple-300">Cozy Autumn Town</p>
+            </div>
+        </div>
+
+        <!-- Quick Controls -->
+        <div class="flex items-center space-x-2 text-xs md:text-sm">
+            <button id="unstick-btn" class="px-3 py-1.5 bg-amber-700/60 hover:bg-amber-600 border border-amber-400 text-amber-100 rounded-lg flex items-center gap-1 transition shadow" title="Reset Player Position">
+                <i class="fa-solid fa-compass"></i> Unstick
+            </button>
+            <button id="weather-btn" class="px-3 py-1.5 bg-indigo-900/60 hover:bg-indigo-800 border border-indigo-400 text-indigo-200 rounded-lg flex items-center gap-1 transition shadow">
+                <i class="fa-solid fa-cloud-rain" id="rain-icon"></i> <span id="weather-text">Rain: Off</span>
+            </button>
+            <button id="tod-btn" class="px-3 py-1.5 bg-purple-900/60 hover:bg-purple-800 border border-purple-400 text-purple-200 rounded-lg flex items-center gap-1 transition shadow">
+                <i class="fa-solid fa-sun" id="tod-icon"></i> <span id="tod-text">Day</span>
+            </button>
+            <button id="audio-toggle-btn" class="px-3 py-1.5 bg-emerald-900/60 hover:bg-emerald-800 border border-emerald-400 text-emerald-200 rounded-lg flex items-center gap-1 transition shadow">
+                <i class="fa-solid fa-music"></i> <span id="audio-text">Audio: Off</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Game Viewport Container -->
+    <main class="relative w-full h-full flex items-center justify-center p-2 overflow-hidden">
+        <!-- Game Canvas -->
+        <canvas id="gameCanvas" class="rounded-2xl border-4 border-slate-700 shadow-2xl bg-slate-900 cursor-pointer tab-index-0 outline-none" tabindex="0"></canvas>
+
+        <!-- Prompt Overlay (Floating Action Prompt) -->
+        <div id="action-prompt" class="hidden absolute bottom-24 bg-slate-900/90 border-2 border-amber-400 text-amber-200 px-4 py-2 rounded-full shadow-lg text-sm font-semibold flex items-center space-x-2 animate-bounce pointer-events-none z-10">
+            <span class="bg-amber-500 text-slate-950 px-2 py-0.5 rounded text-xs font-bold uppercase">E</span>
+            <span id="prompt-text">Interact</span>
+        </div>
+
+        <!-- Dialogue Box -->
+        <div id="dialogue-box" class="hidden absolute bottom-6 max-w-xl w-11/12 lofi-card p-4 rounded-xl z-20 border-2 border-amber-300/60 flex flex-col gap-2 shadow-2xl">
+            <div class="flex justify-between items-center border-b border-purple-500/30 pb-1">
+                <span id="speaker-name" class="font-bold text-amber-300 pixel-font text-xl">NPC</span>
+                <span class="text-xs text-slate-400">Press [E] or Space to close</span>
+            </div>
+            <p id="dialogue-text" class="text-sm md:text-base leading-relaxed text-slate-200 min-h-[40px]"></p>
+            <div class="flex justify-end gap-2 mt-1" id="dialogue-choices">
+                <button id="close-dialogue-btn" class="px-3 py-1 text-xs bg-purple-800 hover:bg-purple-700 rounded border border-purple-400">Continue</button>
+            </div>
+        </div>
+
+        <!-- Touch Controls / D-Pad (Visible on mobile/small screens) -->
+        <div class="md:hidden absolute bottom-4 left-4 z-10 grid grid-cols-3 gap-1 w-32 h-32 opacity-70 hover:opacity-100 transition-opacity">
+            <div></div>
+            <button id="btn-up" class="dpad-btn rounded-t-lg flex items-center justify-center text-lg"><i class="fa-solid fa-arrow-up"></i></button>
+            <div></div>
+            <button id="btn-left" class="dpad-btn rounded-l-lg flex items-center justify-center text-lg"><i class="fa-solid fa-arrow-left"></i></button>
+            <button id="btn-interact" class="dpad-btn bg-amber-600/80 rounded-full flex items-center justify-center text-sm font-bold border-amber-300">E</button>
+            <button id="btn-right" class="dpad-btn rounded-r-lg flex items-center justify-center text-lg"><i class="fa-solid fa-arrow-right"></i></button>
+            <div></div>
+            <button id="btn-down" class="dpad-btn rounded-b-lg flex items-center justify-center text-lg"><i class="fa-solid fa-arrow-down"></i></button>
+            <div></div>
+        </div>
+
+        <!-- Inventory Hotbar (Bottom Right) -->
+        <div class="absolute bottom-4 right-4 z-10 lofi-card p-2 rounded-xl flex gap-2 border border-purple-500/40">
+            <div class="text-xs text-purple-300 self-center font-bold px-1 hidden sm:block">BAG:</div>
+            <div id="inventory-slots" class="flex gap-1.5">
+                <!-- Dynamic Inventory Items -->
+            </div>
+        </div>
+    </main>
+
+    <!-- Audio Player / Jukebox Overlay Drawer -->
+    <div id="audio-panel" class="hidden absolute top-16 right-4 z-30 w-72 lofi-card p-4 rounded-xl border border-amber-400/40 text-xs flex flex-col gap-3">
+        <div class="flex justify-between items-center border-b border-slate-700 pb-2">
+            <span class="font-bold text-amber-300 text-sm flex items-center gap-2"><i class="fa-solid fa-radio"></i> Lo-Fi Synth Jukebox</span>
+            <button id="close-audio-panel" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="space-y-2">
+            <div class="flex justify-between">
+                <span>Music Volume</span>
+                <input type="range" id="music-vol" min="0" max="1" step="0.05" value="0.3" class="w-28 accent-amber-400">
+            </div>
+            <div class="flex justify-between">
+                <span>Rain Ambience</span>
+                <input type="range" id="rain-vol" min="0" max="1" step="0.05" value="0.4" class="w-28 accent-indigo-400">
+            </div>
+            <div class="flex justify-between">
+                <span>Vinyl Crackle</span>
+                <input type="range" id="crackle-vol" min="0" max="1" step="0.05" value="0.2" class="w-28 accent-amber-600">
+            </div>
+        </div>
+        <div class="text-[10px] text-slate-400 text-center italic mt-1">
+            Procedurally synthesized ambient music using Web Audio API
+        </div>
+    </div>
+
+    <!-- JavaScript Game Engine -->
+    <script>
+        /**
+         * LO-FI HAVEN RPG ENGINE
+         * Ultra-cozy pixel art open world game
+         */
+
+        // Constants
+        const TILE_SIZE = 16;
+        const SCALE = 3; // Pixel scale zoom factor
+        const SCALED_TILE = TILE_SIZE * SCALE; // 48px
+        const OVERWORLD_SIZE = 60; // 60x60 tiles
+
+        // Canvas Setup
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+
+        // Dynamic Resize Handling
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            canvas.width = Math.min(container.clientWidth - 16, 960);
+            canvas.height = Math.min(container.clientHeight - 16, 640);
+            ctx.imageSmoothingEnabled = false;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Audio Synth Engine (Web Audio API)
+        class LofiAudioEngine {
+            constructor() {
+                this.ctx = null;
+                this.isPlaying = false;
+                this.musicGain = null;
+                this.rainGain = null;
+                this.crackleGain = null;
+                this.chordTimer = null;
+                this.rainNode = null;
+                this.crackleNode = null;
+            }
+
+            init() {
+                if (this.ctx) return;
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                this.ctx = new AudioCtx();
+
+                // Master gains
+                this.musicGain = this.ctx.createGain();
+                this.musicGain.gain.value = 0.3;
+                this.musicGain.connect(this.ctx.destination);
+
+                this.rainGain = this.ctx.createGain();
+                this.rainGain.gain.value = 0.0; // Starts off
+                this.rainGain.connect(this.ctx.destination);
+
+                this.crackleGain = this.ctx.createGain();
+                this.crackleGain.gain.value = 0.15;
+                this.crackleGain.connect(this.ctx.destination);
+
+                this.createVinylCrackle();
+                this.createRainNoise();
+            }
+
+            toggle() {
+                if (!this.ctx) this.init();
+                if (this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+
+                this.isPlaying = !this.isPlaying;
+                if (this.isPlaying) {
+                    this.startChords();
+                } else {
+                    if (this.chordTimer) clearInterval(this.chordTimer);
+                }
+                return this.isPlaying;
+            }
+
+            createVinylCrackle() {
+                const bufferSize = this.ctx.sampleRate * 2;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    if (Math.random() < 0.001) {
+                        data[i] = (Math.random() * 2 - 1) * 0.8;
+                    } else if (Math.random() < 0.01) {
+                        data[i] = (Math.random() * 2 - 1) * 0.05;
+                    } else {
+                        data[i] = 0;
+                    }
+                }
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+                noise.loop = true;
+                noise.connect(this.crackleGain);
+                noise.start();
+            }
+
+            createRainNoise() {
+                const bufferSize = this.ctx.sampleRate * 2;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                let lastOut = 0.0;
+                for (let i = 0; i < bufferSize; i++) {
+                    const white = Math.random() * 2 - 1;
+                    data[i] = (lastOut + (0.02 * white)) / 1.02; // Pink noise filter
+                    lastOut = data[i];
+                    data[i] *= 3.5; 
+                }
+                const rain = this.ctx.createBufferSource();
+                rain.buffer = buffer;
+                rain.loop = true;
+                
+                // Low pass filter to make soft rain sound
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.value = 800;
+
+                rain.connect(filter);
+                filter.connect(this.rainGain);
+                rain.start();
+            }
+
+            playWarmTone(freq, duration = 2.5) {
+                if (!this.isPlaying || !this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+
+                // Soft lowpass filter for lo-fi warm tone
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.value = 600;
+
+                gain.gain.setValueAtTime(0, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.15, this.ctx.currentTime + 0.4);
+                gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.musicGain);
+
+                osc.start();
+                osc.stop(this.ctx.currentTime + duration);
+            }
+
+            startChords() {
+                // Chill Lo-Fi progression: Cmaj7 - Am7 - Dm7 - G7
+                const progression = [
+                    [261.63, 329.63, 392.00, 493.88], // Cmaj7
+                    [220.00, 261.63, 329.63, 392.00], // Am7
+                    [293.66, 349.23, 440.00, 523.25], // Dm7
+                    [196.00, 246.94, 293.66, 349.23]  // G7
+                ];
+                let step = 0;
+
+                const playNextChord = () => {
+                    const chord = progression[step % progression.length];
+                    chord.forEach((freq, idx) => {
+                        setTimeout(() => this.playWarmTone(freq, 3.5), idx * 80);
+                    });
+                    step++;
+                };
+
+                playNextChord();
+                this.chordTimer = setInterval(playNextChord, 4000);
+            }
+
+            setRainActive(active) {
+                if (!this.ctx) return;
+                this.rainGain.gain.setTargetAtTime(active ? 0.35 : 0.0, this.ctx.currentTime, 1.2);
+            }
+        }
+
+        const audioEngine = new LofiAudioEngine();
+
+        // Tile Constants
+        const T = {
+            GRASS: 1,
+            PATH: 2,
+            WATER: 3,
+            BRIDGE: 4,
+            TREE: 5,
+            FLOWER: 6,
+            FENCE: 7,
+            WALL: 8,
+            ROOF: 9,
+            DOOR: 10,
+            FLOOR: 11,
+            CARPET: 12,
+            COUNTER: 13,
+            FURNITURE: 14,
+            PIER: 15,
+            BENCH: 16
+        };
+
+        // Passability Map (False = Passable, True = Solid/Blocked)
+        const SOLID_TILES = {
+            [T.GRASS]: false,
+            [T.PATH]: false,
+            [T.WATER]: true,
+            [T.BRIDGE]: false,
+            [T.TREE]: true,
+            [T.FLOWER]: false,
+            [T.FENCE]: true,
+            [T.WALL]: true,
+            [T.ROOF]: true,
+            [T.DOOR]: false, // Handles room teleport
+            [T.FLOOR]: false,
+            [T.CARPET]: false,
+            [T.COUNTER]: true,
+            [T.FURNITURE]: true,
+            [T.PIER]: false,
+            [T.BENCH]: false
+        };
+
+        // World Data Storage
+        let overworldMap = [];
+        let interiors = {};
+        let currentMapKey = 'overworld'; // 'overworld' or interior ID
+
+        // Generate Maps
+        function generateOverworld() {
+            // Initialize with grass
+            const map = Array(OVERWORLD_SIZE).fill(null).map(() => Array(OVERWORLD_SIZE).fill(T.GRASS));
+
+            // Winding River through map
+            for (let y = 0; y < OVERWORLD_SIZE; y++) {
+                let rx = 30 + Math.floor(Math.sin(y * 0.15) * 6);
+                map[y][rx] = T.WATER;
+                map[y][rx + 1] = T.WATER;
+                map[y][rx + 2] = T.WATER;
+            }
+
+            // Stone Bridges across river
+            const bridgeYs = [18, 38];
+            bridgeYs.forEach(by => {
+                for (let x = 24; x <= 38; x++) {
+                    map[by][x] = T.PATH;
+                    map[by+1][x] = T.PATH;
+                    if (map[by][x] === T.WATER) map[by][x] = T.BRIDGE;
+                    if (map[by+1][x] === T.WATER) map[by+1][x] = T.BRIDGE;
+                }
+            });
+
+            // Central Town Plaza Path Network
+            for (let x = 10; x <= 26; x++) {
+                for (let y = 10; y <= 22; y++) {
+                    if (x === 10 || x === 26 || y === 10 || y === 22 || x === 18 || y === 16) {
+                        map[y][x] = T.PATH;
+                    }
+                }
+            }
+
+            // Fishing Pier
+            for (let x = 33; x <= 37; x++) {
+                map[28][x] = T.PIER;
+            }
+
+            // Outer Forest boundary
+            for (let i = 0; i < OVERWORLD_SIZE; i++) {
+                map[0][i] = T.TREE;
+                map[OVERWORLD_SIZE - 1][i] = T.TREE;
+                map[i][0] = T.TREE;
+                map[i][OVERWORLD_SIZE - 1] = T.TREE;
+            }
+
+            // Random Trees & Flowers
+            for (let i = 0; i < 220; i++) {
+                let rx = Math.floor(Math.random() * (OVERWORLD_SIZE - 4)) + 2;
+                let ry = Math.floor(Math.random() * (OVERWORLD_SIZE - 4)) + 2;
+                if (map[ry][rx] === T.GRASS) {
+                    map[ry][rx] = Math.random() > 0.4 ? T.TREE : T.FLOWER;
+                }
+            }
+
+            // Helper function to build house layout
+            const buildHouse = (startX, startY, width, height, doorX, doorY, houseId) => {
+                for (let y = startY; y < startY + height; y++) {
+                    for (let x = startX; x < startX + width; x++) {
+                        if (y === startY || y === startY + 1) {
+                            map[y][x] = T.ROOF;
+                        } else {
+                            map[y][x] = T.WALL;
+                        }
+                    }
+                }
+                map[doorY][doorX] = T.DOOR;
+                // Path to doorway
+                if (map[doorY + 1] && map[doorY + 1][doorX] === T.GRASS) {
+                    map[doorY + 1][doorX] = T.PATH;
+                }
+            };
+
+            // Place 5 Enterable Houses with distinct coordinates
+            // House 1: Lofi Café
+            buildHouse(12, 11, 5, 4, 14, 14, 'cafe');
+            // House 2: Grandma's Cottage
+            buildHouse(20, 11, 5, 4, 22, 14, 'grandma');
+            // House 3: Player Room
+            buildHouse(12, 18, 5, 4, 14, 21, 'bedroom');
+            // House 4: Music Studio
+            buildHouse(20, 18, 5, 4, 22, 21, 'studio');
+            // House 5: Greenhouse
+            buildHouse(10, 30, 6, 4, 12, 33, 'greenhouse');
+
+            return map;
+        }
+
+        // Interior Layouts
+        function generateInteriors() {
+            const createRoom = (w, h, doorX, name) => {
+                const room = Array(h).fill(null).map(() => Array(w).fill(T.FLOOR));
+                for (let x = 0; x < w; x++) {
+                    room[0][x] = T.WALL;
+                    room[h - 1][x] = T.WALL;
+                }
+                for (let y = 0; y < h; y++) {
+                    room[y][0] = T.WALL;
+                    room[y][w - 1] = T.WALL;
+                }
+                room[h - 1][doorX] = T.DOOR;
+                return room;
+            };
+
+            return {
+                'cafe': {
+                    map: createRoom(10, 8, 5, "Lo-Fi Café"),
+                    name: "Lo-Fi Café & Bakery",
+                    returnPos: { x: 14, y: 15 },
+                    furniture: [
+                        { x: 2, y: 2, type: 'counter', label: 'Coffee Machine' },
+                        { x: 3, y: 2, type: 'counter', label: 'Pastry Display' },
+                        { x: 7, y: 3, type: 'table', label: 'Cozy Table' },
+                        { x: 2, y: 5, type: 'fireplace', label: 'Warm Fireplace' }
+                    ]
+                },
+                'grandma': {
+                    map: createRoom(8, 7, 4, "Grandma's Cottage"),
+                    name: "Grandma's Cozy Cottage",
+                    returnPos: { x: 22, y: 15 },
+                    furniture: [
+                        { x: 2, y: 2, type: 'fireplace', label: 'Fireplace' },
+                        { x: 5, y: 2, type: 'bookshelf', label: 'Book Collection' },
+                        { x: 3, y: 4, type: 'carpet', label: 'Tea Table' }
+                    ]
+                },
+                'bedroom': {
+                    map: createRoom(8, 7, 4, "Player's Room"),
+                    name: "Your Lo-Fi Room",
+                    returnPos: { x: 14, y: 22 },
+                    furniture: [
+                        { x: 1, y: 1, type: 'bed', label: 'Comfy Bed' },
+                        { x: 5, y: 1, type: 'desk', label: 'Lo-Fi PC Setup' },
+                        { x: 1, y: 4, type: 'plant', label: 'Monstera Plant' }
+                    ]
+                },
+                'studio': {
+                    map: createRoom(9, 7, 4, "Music Studio"),
+                    name: "Craft & Music Studio",
+                    returnPos: { x: 22, y: 22 },
+                    furniture: [
+                        { x: 2, y: 2, type: 'synth', label: 'Analog Synthesizer' },
+                        { x: 6, y: 2, type: 'easel', label: 'Pixel Canvas' },
+                        { x: 4, y: 4, type: 'couch', label: 'Listening Sofa' }
+                    ]
+                },
+                'greenhouse': {
+                    map: createRoom(10, 8, 5, "Greenhouse"),
+                    name: "Botanical Greenhouse",
+                    returnPos: { x: 12, y: 34 },
+                    furniture: [
+                        { x: 2, y: 2, type: 'plant', label: 'Rare Orchids' },
+                        { x: 7, y: 2, type: 'plant', label: 'Bonsai Tree' },
+                        { x: 4, y: 3, type: 'fountain', label: 'Mini Water Fountain' }
+                    ]
+                }
+            };
+        }
+
+        overworldMap = generateOverworld();
+        interiors = generateInteriors();
+
+        // Player State
+        const player = {
+            x: 16 * SCALED_TILE, // Safe spawn on Stone Plaza Path
+            y: 15 * SCALED_TILE,
+            vx: 0,
+            vy: 0,
+            speed: 3.2,
+            width: SCALED_TILE * 0.7,
+            height: SCALED_TILE * 0.7,
+            dir: 'down', // down, up, left, right
+            isMoving: false,
+            targetPath: null, // Click-to-move target tile
+            inventory: ['☕ Warm Coffee', '🎣 Fishing Rod'],
+            sitting: false
+        };
+
+        // Game Entities (NPCs, Animals)
+        const npcs = [
+            { id: 'barista', name: 'Barista Maya', x: 2, y: 2, room: 'cafe', sprite: '👩‍🍳', text: "Welcome to Lo-Fi Haven Café! Grab a fresh brew and enjoy the chords." },
+            { id: 'grandma', name: 'Grandma Nora', x: 5, y: 3, room: 'grandma', sprite: '👵', text: "Hello dearie! Have some warm chamomile tea and rest your feet." },
+            { id: 'musician', name: 'Leo', x: 2, y: 3, room: 'studio', sprite: '🎧', text: "Working on a new ambient track. Synthesizers and vinyl scratch keep me calm." },
+            { id: 'gardener', name: 'Ivy', x: 5, y: 2, room: 'greenhouse', sprite: '👩‍🌾', text: "Plants thrive when you listen to calming music with them!" },
+            { id: 'townie', name: 'Oliver', x: 18, y: 15, room: 'overworld', sprite: '🧍', text: "The autumn breeze in town square feels amazing today." },
+            { id: 'cat', name: 'Mochi the Cat', x: 15, y: 16, room: 'overworld', sprite: '🐱', text: "Purrrrr... (Mochi rubs against your ankles)" },
+            { id: 'dog', name: 'Buster', x: 23, y: 16, room: 'overworld', sprite: '🐶', text: "Woof! (Buster wags his tail enthusiastically!)" },
+            { id: 'sheep1', name: 'Barnaby Sheep', x: 28, y: 12, room: 'overworld', sprite: '🐑', text: "Baaah!" }
+        ];
+
+        // Weather & Environment Systems
+        let weatherRain = false;
+        let rainDrops = [];
+        let timeOfDay = 'day'; // 'day', 'sunset', 'night'
+        
+        for (let i = 0; i < 70; i++) {
+            rainDrops.push({
+                x: Math.random() * 1000,
+                y: Math.random() * 1000,
+                speed: 8 + Math.random() * 6,
+                len: 10 + Math.random() * 8
+            });
+        }
+
+        // Key Listener State
+        const keysHeld = {};
+
+        window.addEventListener('keydown', e => {
+            keysHeld[e.key.toLowerCase()] = true;
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+                e.preventDefault();
+            }
+            if (e.key.toLowerCase() === 'e' || e.key === ' ') {
+                handleInteraction();
+            }
+        });
+
+        window.addEventListener('keyup', e => {
+            keysHeld[e.key.toLowerCase()] = false;
+        });
+
+        // Click / Tap to Move Pathing
+        canvas.addEventListener('click', e => {
+            canvas.focus();
+            const rect = canvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+
+            // Convert Canvas Screen Space to World Grid Space
+            const cameraX = player.x - canvas.width / 2 + player.width / 2;
+            const cameraY = player.y - canvas.height / 2 + player.height / 2;
+
+            const worldX = clickX + cameraX;
+            const worldY = clickY + cameraY;
+
+            const targetTileX = Math.floor(worldX / SCALED_TILE);
+            const targetTileY = Math.floor(worldY / SCALED_TILE);
+
+            player.targetPath = { x: targetTileX * SCALED_TILE + SCALED_TILE / 2, y: targetTileY * SCALED_TILE + SCALED_TILE / 2 };
+        });
+
+        // Helper: Get active map grid
+        function getCurrentMapGrid() {
+            if (currentMapKey === 'overworld') return overworldMap;
+            return interiors[currentMapKey].map;
+        }
+
+        // Helper: Check solid collision at pixel position
+        function isPositionSolid(px, py) {
+            const grid = getCurrentMapGrid();
+            const tileX = Math.floor(px / SCALED_TILE);
+            const tileY = Math.floor(py / SCALED_TILE);
+
+            if (tileY < 0 || tileY >= grid.length || tileX < 0 || tileX >= grid[0].length) {
+                return true; // Out of bounds is solid
+            }
+
+            const tileType = grid[tileY][tileX];
+            return SOLID_TILES[tileType] || false;
+        }
+
+        // Check bounding box collisions against map environment
+        function checkCollision(nx, ny) {
+            const padding = 6;
+            const left = nx + padding;
+            const right = nx + player.width - padding;
+            const top = ny + padding;
+            const bottom = ny + player.height - padding;
+
+            return (
+                isPositionSolid(left, top) ||
+                isPositionSolid(right, top) ||
+                isPositionSolid(left, bottom) ||
+                isPositionSolid(right, bottom)
+            );
+        }
+
+        // Player Movement & Continuous Collision Response
+        function updatePlayerMovement() {
+            player.vx = 0;
+            player.vy = 0;
+
+            // Keyboard input check
+            if (keysHeld['w'] || keysHeld['arrowup']) player.vy -= player.speed;
+            if (keysHeld['s'] || keysHeld['arrowdown']) player.vy += player.speed;
+            if (keysHeld['a'] || keysHeld['arrowleft']) player.vx -= player.speed;
+            if (keysHeld['d'] || keysHeld['arrowright']) player.vx += player.speed;
+
+            // Touch / Target Pathing Override
+            if (player.vx === 0 && player.vy === 0 && player.targetPath) {
+                const dx = player.targetPath.x - (player.x + player.width / 2);
+                const dy = player.targetPath.y - (player.y + player.height / 2);
+                const dist = Math.hypot(dx, dy);
+
+                if (dist > 6) {
+                    player.vx = (dx / dist) * player.speed;
+                    player.vy = (dy / dist) * player.speed;
+                } else {
+                    player.targetPath = null;
+                }
+            } else if (player.vx !== 0 || player.vy !== 0) {
+                // Cancel touch path when keyboard/dpad active
+                player.targetPath = null;
+            }
+
+            // Direction facing
+            if (Math.abs(player.vx) > Math.abs(player.vy)) {
+                player.dir = player.vx > 0 ? 'right' : 'left';
+            } else if (Math.abs(player.vy) > 0) {
+                player.dir = player.vy > 0 ? 'down' : 'up';
+            }
+
+            // Move with Sliding Collision Axis Check
+            if (player.vx !== 0) {
+                if (!checkCollision(player.x + player.vx, player.y)) {
+                    player.x += player.vx;
+                }
+            }
+            if (player.vy !== 0) {
+                if (!checkCollision(player.x, player.y + player.vy)) {
+                    player.y += player.vy;
+                }
+            }
+
+            // Doorway / Transition Logic
+            const currentTileX = Math.floor((player.x + player.width / 2) / SCALED_TILE);
+            const currentTileY = Math.floor((player.y + player.height / 2) / SCALED_TILE);
+            const grid = getCurrentMapGrid();
+
+            if (grid[currentTileY] && grid[currentTileY][currentTileX] === T.DOOR) {
+                handleDoorTransition(currentTileX, currentTileY);
+            }
+
+            checkProximityPrompts();
+        }
+
+        // Doorway Map Switcher
+        function handleDoorTransition(tx, ty) {
+            if (currentMapKey === 'overworld') {
+                // Determine which house we entered
+                if (tx === 14 && ty === 14) switchMap('cafe');
+                else if (tx === 22 && ty === 14) switchMap('grandma');
+                else if (tx === 14 && ty === 21) switchMap('bedroom');
+                else if (tx === 22 && ty === 21) switchMap('studio');
+                else if (tx === 12 && ty === 33) switchMap('greenhouse');
+            } else {
+                // Return to Overworld
+                const returnData = interiors[currentMapKey].returnPos;
+                switchMap('overworld', returnData.x, returnData.y + 1);
+            }
+        }
+
+        function switchMap(targetKey, spawnGridX, spawnGridY) {
+            currentMapKey = targetKey;
+            player.targetPath = null;
+
+            if (targetKey === 'overworld') {
+                player.x = (spawnGridX || 16) * SCALED_TILE;
+                player.y = (spawnGridY || 16) * SCALED_TILE;
+            } else {
+                // Spawn inside near room entrance
+                const roomData = interiors[targetKey];
+                const doorTileX = Math.floor(roomData.map[0].length / 2);
+                const doorTileY = roomData.map.length - 2;
+                player.x = doorTileX * SCALED_TILE;
+                player.y = doorTileY * SCALED_TILE;
+            }
+        }
+
+        // Emergency Unstick / Safe Spawn Reset
+        document.getElementById('unstick-btn').addEventListener('click', () => {
+            currentMapKey = 'overworld';
+            player.x = 16 * SCALED_TILE; // Safe stone plaza coordinates
+            player.y = 15 * SCALED_TILE;
+            player.targetPath = null;
+            showDialogue("Mochi the Cat", "Meow! Reset your position back to the safe Town Square plaza.");
+        });
+
+        // Interactive Proximity Prompt Handling
+        let activeInteractive = null;
+
+        function checkProximityPrompts() {
+            const px = player.x + player.width / 2;
+            const py = player.y + player.height / 2;
+            activeInteractive = null;
+
+            // Check NPCs in current area
+            npcs.forEach(npc => {
+                if (npc.room === currentMapKey) {
+                    const nx = npc.x * SCALED_TILE + SCALED_TILE / 2;
+                    const ny = npc.y * SCALED_TILE + SCALED_TILE / 2;
+                    if (Math.hypot(px - nx, py - ny) < SCALED_TILE * 1.5) {
+                        activeInteractive = { type: 'npc', data: npc, text: `Talk to ${npc.name}` };
+                    }
+                }
+            });
+
+            // Check Special Pier Fishing Spot
+            if (currentMapKey === 'overworld') {
+                const tileX = Math.floor(px / SCALED_TILE);
+                const tileY = Math.floor(py / SCALED_TILE);
+                if (overworldMap[tileY] && overworldMap[tileY][tileX] === T.PIER) {
+                    activeInteractive = { type: 'fishing', text: "Cast Fishing Line" };
+                }
+            }
+
+            // Update UI Prompt Element
+            const promptEl = document.getElementById('action-prompt');
+            if (activeInteractive) {
+                document.getElementById('prompt-text').textContent = activeInteractive.text;
+                promptEl.classList.remove('hidden');
+            } else {
+                promptEl.classList.add('hidden');
+            }
+        }
+
+        // Trigger interaction logic
+        function handleInteraction() {
+            if (!activeInteractive) return;
+
+            if (activeInteractive.type === 'npc') {
+                showDialogue(activeInteractive.data.name, activeInteractive.data.text);
+            } else if (activeInteractive.type === 'fishing') {
+                const catches = ['🐠 Cozy Koi', '🐟 Golden Trout', '🌸 Blossom Petal', '👢 Retro Boot'];
+                const caught = catches[Math.floor(Math.random() * catches.length)];
+                if (!player.inventory.includes(caught)) {
+                    player.inventory.push(caught);
+                    updateInventoryUI();
+                }
+                showDialogue("Fishing Pier", `You cast your reel softly into the river... and caught a ${caught}!`);
+            }
+        }
+
+        // Dialogue Box Controller
+        function showDialogue(speaker, text) {
+            document.getElementById('speaker-name').textContent = speaker;
+            document.getElementById('dialogue-text').textContent = text;
+            document.getElementById('dialogue-box').classList.remove('hidden');
+        }
+
+        document.getElementById('close-dialogue-btn').addEventListener('click', () => {
+            document.getElementById('dialogue-box').classList.add('hidden');
+        });
+
+        // Inventory Hotbar UI Refresh
+        function updateInventoryUI() {
+            const slots = document.getElementById('inventory-slots');
+            slots.innerHTML = '';
+            player.inventory.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'px-2 py-1 bg-slate-800/80 border border-amber-400/30 rounded text-xs text-amber-200 flex items-center shadow';
+                div.textContent = item;
+                slots.appendChild(div);
+            });
+        }
+        updateInventoryUI();
+
+        // Render Functions
+        function renderTile(type, x, y) {
+            switch(type) {
+                case T.GRASS:
+                    ctx.fillStyle = '#688c52';
+                    ctx.fillRect(x, y, SCALED_TILE, SCALED_TILE);
+                    // Subtle grass detail blades
+                    ctx.fillStyle = '#557541';
+                    ctx.fillRect(x + 8, y + 12, 4, 8);
+                    ctx.fillRect(x + 28, y + 24, 4, 6);
+                    break;
+                case T.PATH:
+                    ctx.fillStyle = '#c2a688';
+                    ctx.fillRect(x, y, SCALED_TILE, SCALED_TILE);
+                    ctx.fillStyle = '#a88c70';
+                    ctx.fillRect(x + 2, y + 2, SCALED_TILE - 4, SCALED_TILE - 4);
+                    break;
+                case T.WATER:
+                    ctx.fillStyle = '#41718d';
+                    ctx.fillRect(x, y, SCALED_TILE, SCALED_TILE);
+                    // Animated water shimmer line
+                    ctx.fillStyle = '#619cb8';
+                    let shift = (Date.now() / 400) % 10;
+                    ctx.fillRect(x + shift * 2, y + 16, 12, 3);
+                    break;
+                case T.BRIDGE:
+                    ctx.fillStyle = '#835439';
+                    ctx.fillRect(x, y, SCALED_TILE, SCALED_TILE);
+                    ctx.fillStyle = '#5c3823';
+                    ctx.fillRect(x, y + 4, SCALED_TILE, 4);
+                    ctx.fillRect(x, y + 36, SCALED_TILE, 4);
+                    break;
+                case T.TREE:
+                    // Ground
+                    ctx.fillStyle = '#688c52';
+                    ctx.fillRect(x, y, SCALED_TILE, SCALED_TILE);
+                    // Orange Autumn Tree Canopy
+                    ctx.fillStyle = '#d96b27';
+                    ctx.fillRect(x + 6, y + 4, SCALED_TILE - 12, SCALED_TILE - 8);
+                    ctx.fillStyle = '#b34e14';
+                    ctx.fillRect(x + 10, y + 8, SCALED_TILE - 20, SCALED_TILE - 12);
+                    // Trunk
+                    ctx.fillStyle = '#54321d';
+                    ctx.fillRect(x + 20, y + 32, 8, 14);
+                    break;
+                case T.FLOWER:
+                    ctx.fillStyle = '#688c52';
+                    ctx.fillRect(x, y, SCALED_TILE, SCALED_TILE);
+                    ctx.fillStyle = '#e8a5c8';
+                    ctx.beginPath();
+                    ctx.arc(x + 16, y + 16, 5, 0, Math.PI * 2);
+                    ctx.arc(x + 32, y + 28, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    break;
+                case T.WALL:
+                    ctx.fillStyle = '#4d3d52';
+                    ctx.fillRect(x, y, SCALED_TILE, SCALED_TILE);
+                    ctx.fillStyle = '#392c3d';
+                    ctx.fillRect(x + 4, y + 4, SCALED_TILE - 8, SCALED_TILE - 8);
+                    break;
+                case T.ROOF:
+                    ctx.fillStyle = '#3a5373';
+                    ctx.fillRect(x, y, SCALED_TILE, SCALED_TILE);
+                    ctx.fillStyle = '#2a3d54';
+                    ctx.fillRect(x, y + 36, SCALED_TILE, 12);
+                    break;
+                case T.DOOR:
+                    ctx.fillStyle = '#8a5229';
+                    ctx.fillRect(x + 8, y + 4, SCALED_TILE - 16, SCALED_TILE - 4);
+                    ctx.fillStyle = '#f0c043';
+                    ctx.fillRect(x + 32, y + 24, 4, 4); // Knob
+                    break;
+                case T.FLOOR:
+                    ctx.fillStyle = '#9e7b66';
+                    ctx.fillRect(x, y, SCALED_TILE, SCALED_TILE);
+                    ctx.fillStyle = '#85624d';
+                    ctx.fillRect(x, y, SCALED_TILE, 2); // Wood plank line
+                    break;
+                case T.PIER:
+                    ctx.fillStyle = '#78563c';
+                    ctx.fillRect(x, y, SCALED_TILE, SCALED_TILE);
+                    ctx.fillStyle = '#4a3321';
+                    ctx.fillRect(x + 4, y, 4, SCALED_TILE);
+                    ctx.fillRect(x + 40, y, 4, SCALED_TILE);
+                    break;
+                default:
+                    ctx.fillStyle = '#222';
+                    ctx.fillRect(x, y, SCALED_TILE, SCALED_TILE);
+            }
+        }
+
+        // Render Player Avatar (Cozy Pixel Sprite)
+        function renderPlayer(screenX, screenY) {
+            // Shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.25)';
+            ctx.beginPath();
+            ctx.ellipse(screenX + player.width / 2, screenY + player.height - 2, 12, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Cozy Yellow Sweater Body
+            ctx.fillStyle = '#eab308';
+            ctx.fillRect(screenX + 6, screenY + 12, player.width - 12, player.height - 14);
+
+            // Head / Skin
+            ctx.fillStyle = '#fbcfe8';
+            ctx.fillRect(screenX + 8, screenY + 2, player.width - 16, 12);
+
+            // Cute Brown Beanie Hat
+            ctx.fillStyle = '#78350f';
+            ctx.fillRect(screenX + 6, screenY, player.width - 12, 6);
+
+            // Directional Eye / Face Detail
+            ctx.fillStyle = '#1e1b4b';
+            if (player.dir === 'down') {
+                ctx.fillRect(screenX + 11, screenY + 7, 3, 3);
+                ctx.fillRect(screenX + 19, screenY + 7, 3, 3);
+            } else if (player.dir === 'left') {
+                ctx.fillRect(screenX + 8, screenY + 7, 3, 3);
+            } else if (player.dir === 'right') {
+                ctx.fillRect(screenX + 22, screenY + 7, 3, 3);
+            }
+        }
+
+        // Render NPCs & Pets
+        function renderEntities(cameraX, cameraY) {
+            npcs.forEach(npc => {
+                if (npc.room === currentMapKey) {
+                    const screenX = npc.x * SCALED_TILE - cameraX;
+                    const screenY = npc.y * SCALED_TILE - cameraY;
+
+                    // Draw Sprite Icon
+                    ctx.font = '28px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(npc.sprite, screenX + SCALED_TILE / 2, screenY + SCALED_TILE / 1.2);
+                }
+            });
+        }
+
+        // Render Interior Furniture Props
+        function renderFurniture(cameraX, cameraY) {
+            if (currentMapKey === 'overworld') return;
+
+            const room = interiors[currentMapKey];
+            room.furniture.forEach(item => {
+                const screenX = item.x * SCALED_TILE - cameraX;
+                const screenY = item.y * SCALED_TILE - cameraY;
+
+                ctx.fillStyle = '#6b4632';
+                ctx.fillRect(screenX + 4, screenY + 4, SCALED_TILE - 8, SCALED_TILE - 8);
+
+                ctx.fillStyle = '#fef08a';
+                ctx.font = '10px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(item.label.split(' ')[0], screenX + SCALED_TILE / 2, screenY + SCALED_TILE / 1.8);
+            });
+        }
+
+        // Render Weather Rain Effect Overlay
+        function renderRain() {
+            if (!weatherRain) return;
+
+            ctx.strokeStyle = 'rgba(186, 230, 253, 0.4)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            rainDrops.forEach(drop => {
+                ctx.moveTo(drop.x, drop.y);
+                ctx.lineTo(drop.x - 3, drop.y + drop.len);
+
+                drop.y += drop.speed;
+                drop.x -= 1;
+
+                if (drop.y > canvas.height) {
+                    drop.y = -10;
+                    drop.x = Math.random() * canvas.width;
+                }
+            });
+            ctx.stroke();
+        }
+
+        // Ambient Time of Day Overlay
+        function renderLightingOverlay() {
+            if (timeOfDay === 'sunset') {
+                ctx.fillStyle = 'rgba(217, 119, 6, 0.18)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            } else if (timeOfDay === 'night') {
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.55)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+        }
+
+        // Main Game Render Loop
+        function gameLoop() {
+            updatePlayerMovement();
+
+            // Clear Screen
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Calculate Smooth Centered Camera
+            const cameraX = player.x - canvas.width / 2 + player.width / 2;
+            const cameraY = player.y - canvas.height / 2 + player.height / 2;
+
+            // Tile Visibility Rendering Range
+            const startCol = Math.max(0, Math.floor(cameraX / SCALED_TILE));
+            const endCol = startCol + Math.ceil(canvas.width / SCALED_TILE) + 1;
+            const startRow = Math.max(0, Math.floor(cameraY / SCALED_TILE));
+            const endRow = startRow + Math.ceil(canvas.height / SCALED_TILE) + 1;
+
+            const grid = getCurrentMapGrid();
+
+            // Render Map Grid
+            for (let r = startRow; r < Math.min(grid.length, endRow); r++) {
+                for (let c = startCol; c < Math.min(grid[0].length, endCol); c++) {
+                    const tileType = grid[r][c];
+                    const screenX = Math.round(c * SCALED_TILE - cameraX);
+                    const screenY = Math.round(r * SCALED_TILE - cameraY);
+                    renderTile(tileType, screenX, screenY);
+                }
+            }
+
+            // Render Furniture Props
+            renderFurniture(cameraX, cameraY);
+
+            // Render NPCs & Animals
+            renderEntities(cameraX, cameraY);
+
+            // Render Player
+            renderPlayer(player.x - cameraX, player.y - cameraY);
+
+            // Render Weather Rain Overlay
+            renderRain();
+
+            // Render Lighting Atmosphere Overlay
+            renderLightingOverlay();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Event UI Binding Setup
+        document.getElementById('weather-btn').addEventListener('click', () => {
+            weatherRain = !weatherRain;
+            audioEngine.setRainActive(weatherRain);
+            document.getElementById('weather-text').textContent = `Rain: ${weatherRain ? 'On' : 'Off'}`;
+            document.getElementById('rain-icon').className = weatherRain ? 'fa-solid fa-cloud-showers-heavy' : 'fa-solid fa-cloud-rain';
+        });
+
+        document.getElementById('tod-btn').addEventListener('click', () => {
+            if (timeOfDay === 'day') timeOfDay = 'sunset';
+            else if (timeOfDay === 'sunset') timeOfDay = 'night';
+            else timeOfDay = 'day';
+
+            document.getElementById('tod-text').textContent = timeOfDay.charAt(0).toUpperCase() + timeOfDay.slice(1);
+        });
+
+        document.getElementById('audio-toggle-btn').addEventListener('click', () => {
+            const isPlaying = audioEngine.toggle();
+            document.getElementById('audio-text').textContent = `Audio: ${isPlaying ? 'On' : 'Off'}`;
+            document.getElementById('audio-panel').classList.toggle('hidden', !isPlaying);
+        });
+
+        document.getElementById('close-audio-panel').addEventListener('click', () => {
+            document.getElementById('audio-panel').classList.add('hidden');
+        });
+
+        // Volume Sliders
+        document.getElementById('music-vol').addEventListener('input', e => {
+            if (audioEngine.musicGain) audioEngine.musicGain.gain.value = e.target.value;
+        });
+        document.getElementById('rain-vol').addEventListener('input', e => {
+            if (audioEngine.rainGain) audioEngine.rainGain.gain.value = e.target.value;
+        });
+        document.getElementById('crackle-vol').addEventListener('input', e => {
+            if (audioEngine.crackleGain) audioEngine.crackleGain.gain.value = e.target.value;
+        });
+
+        // Touch D-Pad Controls
+        const bindDpad = (btnId, key) => {
+            const btn = document.getElementById(btnId);
+            btn.addEventListener('touchstart', (e) => { e.preventDefault(); keysHeld[key] = true; });
+            btn.addEventListener('touchend', (e) => { e.preventDefault(); keysHeld[key] = false; });
+            btn.addEventListener('mousedown', () => { keysHeld[key] = true; });
+            btn.addEventListener('mouseup', () => { keysHeld[key] = false; });
+        };
+
+        bindDpad('btn-up', 'w');
+        bindDpad('btn-down', 's');
+        bindDpad('btn-left', 'a');
+        bindDpad('btn-right', 'd');
+        document.getElementById('btn-interact').addEventListener('click', handleInteraction);
+
+        // Start Loop on window load
+        window.onload = () => {
+            gameLoop();
+        };
+    </script>
+</body>
+</html>
